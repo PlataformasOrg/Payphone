@@ -7,6 +7,7 @@ pipeline {
   }
 
   stages {
+
     stage('Checkout') {
       steps {
         checkout scm
@@ -24,17 +25,17 @@ pipeline {
     stage('Ejecutar tests') {
       steps {
         dir('backend') {
-          sh '''
-            chmod +x ./node_modules/.bin/jest || true
-            npm test -- --ci --runInBand
-          '''
+          sh 'chmod +x ./node_modules/.bin/jest'
+          sh 'npm test -- --ci --runInBand'
         }
       }
     }
 
     stage('Construir imagen Docker') {
       steps {
-        sh 'docker build -t payphone-app:latest .'
+        dir('backend') {
+          sh 'docker build -t payphone-app:latest .'
+        }
       }
     }
 
@@ -43,7 +44,7 @@ pipeline {
         sh '''
           docker stop payphone-app || true
           docker rm payphone-app || true
-          docker run -d --name payphone-app -p 3000:3000 payphone-app:latest
+          docker run -d --name payphone-app -p 3001:3001 payphone-app:latest
         '''
       }
     }
