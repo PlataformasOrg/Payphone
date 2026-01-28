@@ -3,41 +3,48 @@ pipeline {
 
     tools {
         nodejs "Node25"
-        dockerTool "Dockertool" 
+        dockerTool "Dockertool"
     }
 
     stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
         stage('Instalar dependencias') {
             steps {
-                sh 'npm install'
+                dir('backend') {
+                    sh 'npm install'
+                }
             }
         }
 
         stage('Ejecutar tests') {
             steps {
-                sh 'chmod +x ./node_modules/.bin/jest'  // Soluciona el problema de permisos
-                sh 'npm test -- --ci --runInBand'
+                dir('backend') {
+                    // ✅ Fix permisos (por si Jenkins/Linux marca "permission denied")
+                    sh 'chmod +x ./node_modules/.bin/jest  true'
+                    sh 'npm test -- --ci --runInBand'
+                }
             }
         }
 
-        stage('Construir Imagen Docker') {
-            when {
-                expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
-            }
+        stage('Construir imagen Docker') {
             steps {
-                sh 'docker build -t hola-mundo-node:latest .'
+                dir('backend') {
+                    sh 'docker build -t payphone-app:latest .'
+                }
             }
         }
 
-        stage('Ejecutar Contenedor Node.js') {
-            when {
-                expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
-            }
+        stage('Desplegar contenedor') {
             steps {
                 sh '''
-                    docker stop hola-mundo-node || true
-                    docker rm hola-mundo-node || true
-                    docker run -d --name hola-mundo-node -p 3000:3000 hola-mundo-node:latest
+                  docker stop payphone-app  true
+                  docker rm payphone-app || true
+                  docker run -d --name payphone-app -p 3001:3001 payphone-app:latest
                 '''
             }
         }

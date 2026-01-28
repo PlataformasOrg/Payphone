@@ -2,80 +2,78 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import fetch from "node-fetch";
+import path from "path";
+import { fileURLToPath } from "url";
 
 dotenv.config();
 
+// ===============================
+// Configuración paths (ESM)
+// ===============================
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// ===============================
+// App
+// ===============================
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-/**
- * Endpoint de salud
- */
+// ===============================
+// Servir FRONTEND estático
+// ===============================
+app.use(express.static(path.join(__dirname, "public")));
+
+// ===============================
+// Health check (Jenkins)
+// ===============================
 app.get("/health", (req, res) => {
   res.json({ ok: true, message: "Backend OK" });
 });
 
-/**
- * PREPARE: crea una transacción PayPhone (botón / link / QR)
- * - Usa TOKEN DE TIENDA
- * - Usa STORE_ID tipo UUID (string)
- * - NO envía phoneNumber (opcional y causa errores)
- */
+// ===============================
+// PAYPHONE - PREPARE
+// ===============================
 app.post("/api/payphone/prepare", async (req, res) => {
   try {
     const { amountUSD, reference } = req.body;
 
-    // 1️⃣ Validar monto
     const amountNum = Number(amountUSD);
     if (!amountNum || amountNum <= 0) {
       return res.status(400).json({ error: "amountUSD inválido" });
     }
 
-    // 2️⃣ Leer STORE_ID (UUID, NO number)
-    const storeId = process.env.PAYPHONE_STORE_ID;
-    if (!storeId || storeId.trim().length < 10) {
-      return res.status(500).json({
-        error: "PAYPHONE_STORE_ID no válido en .env (debe ser UUID completo)",
-        value: storeId,
-      });
-    }
-
-    // 3️⃣ Leer TOKEN de tienda
     const token = process.env.PAYPHONE_TOKEN;
-    if (!token) {
+    const storeId = process.env.PAYPHONE_STORE_ID;
+    const responseUrl =
+      process.env.RESPONSE_URL || "http://localhost:3001/retorno.html";
+
+    if (!token || !storeId) {
       return res.status(500).json({
-        error: "PAYPHONE_TOKEN no existe en .env",
+        error: "Variables de entorno PAYPHONE no definidas",
       });
     }
 
-    // 4️⃣ URL de retorno
-    const responseUrl =
-      process.env.RESPONSE_URL || "http://localhost:3000/retorno.html";
-
-    // 5️⃣ PayPhone trabaja en centavos
     const amount = Math.round(amountNum * 100);
 
-    // 6️⃣ Payload (SIN teléfono)
     const payload = {
       amount,
       amountWithoutTax: amount,
       currency: "USD",
       clientTransactionId: `TXN-${Date.now()}`,
       storeId,
-      reference: reference || "Pago de prueba",
+      reference: reference || "Pago PayPhone",
       responseUrl,
 
-      // Compatibilidad por si el API exige mayúsculas
+      // Compatibilidad
       StoreId: storeId,
       ResponseUrl: responseUrl,
     };
 
-    console.log("===== PAYLOAD ENVIADO A PAYPHONE =====");
+    console.log("===== PAYLOAD PAYPHONE =====");
     console.log(JSON.stringify(payload, null, 2));
-    console.log("======================================");
 
-    // 7️⃣ Llamada al API PayPhone
     const response = await fetch(
       "https://pay.payphonetodoesposible.com/api/button/Prepare",
       {
@@ -90,27 +88,33 @@ app.post("/api/payphone/prepare", async (req, res) => {
 
     const data = await response.json();
 
-    console.log("HTTP STATUS PAYPHONE:", response.status);
-    console.log("RESPUESTA PAYPHONE:", JSON.stringify(data, null, 2));
+    console.log("STATUS:", response.status);
+    console.log("RESPUESTA:", JSON.stringify(data, null, 2));
 
-    // 8️⃣ Responder al frontend
     return res.status(response.status).json({
       httpStatus: response.status,
-      requestSent: payload,
       responseReceived: data,
     });
   } catch (err) {
     return res.status(500).json({
       error: "Error interno",
-      details: String(err?.message || err),
+      details: String(err.message || err),
     });
   }
 });
 
-/**
- * Arranque del servidor
- */
+// ===============================
+// Export para tests
+// ===============================
+export default app;
+
+// ===============================
+// Iniciar servidor (no tests)
+// ===============================
 const PORT = Number(process.env.PORT || 3001);
-app.listen(PORT, () => {
-  console.log(`Backend corriendo en http://localhost:${PORT}`);
-});
+
+if (process.env.NODE_ENV !== "test") {
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Servidor corriendo en http://localhost:${PORT}`);
+  });
+}
